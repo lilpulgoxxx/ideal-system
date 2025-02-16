@@ -725,7 +725,7 @@ function split_tokens_field_callback() {
 })(jQuery);
 </script>
 PHP_PLUGIN_CODE
-wp plugin activate llama3-chatbot-pro
+#wp plugin activate llama3-chatbot-pro
 
 # Eliminar el directorio temporal del plugin
 RUN rm -rf /var/www/html/llama3-chatbot-pro

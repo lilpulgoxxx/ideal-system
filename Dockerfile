@@ -1,4 +1,4 @@
-FROM php:8.2-apache-alpine
+FROM wordpress:php8.2-apache-alpine
 
 # Instalar las extensiones PHP requeridas, herramientas y wp-cli
 RUN apk update && apk add --no-cache \
@@ -31,12 +31,7 @@ RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local
 # Definir directorio de trabajo
 WORKDIR /var/www/html
 
-# Instalar WordPress
-RUN curl -O https://wordpress.org/latest.tar.gz && \
-    tar xzf latest.tar.gz --strip-components=1 && \
-    rm latest.tar.gz
-
-# Incrustar el contenido de wp-cli.config.php directamente
+# Incrustar el contenido de wp-cli.config.php directamente (crea wp-config.php)
 RUN cat > wp-config.php <<'EOL'
 <?php
 /**
@@ -52,7 +47,7 @@ return array(
 );
 EOL
 
-# Instalar el core de WordPress, crear el usuario admin, establecer URLs, instalar y activar el plugin
+# Configurar WordPress y copiar el plugin (se omite la activación del plugin)
 RUN wp core install --path='/var/www/html' --url="https://${RAILWAY_STATIC_URL}" --title="Llama3 Chatbot Site" --admin_user="admin" --admin_password="password" --admin_email="admin@example.com" --skip-email --allow-root && \
     wp option update siteurl "https://${RAILWAY_STATIC_URL}" --allow-root && \
     wp option update home "https://${RAILWAY_STATIC_URL}" --allow-root && \
@@ -106,7 +101,8 @@ if (!file_exists($autoload_path)) {
 require_once $autoload_path;
 
 try {
-    $transformer = Transformer::fromPretrained('meta-llama/Llama-3-8B');
+    // Se utiliza el modelo lilmeaty/Jaja-small-v4 en lugar de meta-llama/Llama-3-8B
+    $transformer = Transformer::fromPretrained('lilmeaty/Jaja-small-v4');
     $textGenerationPipeline = new TextGenerationPipeline($transformer);
     error_log("Llama 3 Chatbot: Modelo/pipeline cargado en " . gethostname());
 } catch (Exception $e) {
@@ -532,216 +528,3 @@ function llama3_chatbot_register_settings() {
         'generation_settings_section'
     );
 }
-
-function api_settings_section_callback() {
-    _e('Configura los ajustes de API para servicios externos.', 'llama3-chatbot');
-}
-function chatbot_settings_section_callback() {
-    _e('Personaliza la apariencia y el comportamiento del chatbot.', 'llama3-chatbot');
-}
-function generation_settings_section_callback() {
-    _e('Ajusta los parámetros de generación de texto, incluyendo el tamaño de los fragmentos en streaming.', 'llama3-chatbot');
-}
-
-function hf_api_key_field_callback() {
-    $apiKey = esc_attr(get_option('llama3_chatbot_hf_api_key'));
-    echo "<input type='text' name='llama3_chatbot_hf_api_key' value='{$apiKey}' class='regular-text'>";
-}
-function initial_message_field_callback() {
-    $initialMessage = esc_textarea(get_option('llama3_chatbot_initial_message', __('Welcome to the Chatbot! Ask me anything.', 'llama3-chatbot')));
-    echo "<textarea name='llama3_chatbot_initial_message' class='large-text code' rows='5'>{$initialMessage}</textarea>";
-}
-function max_tokens_field_callback() {
-    $maxTokens = absint(get_option('llama3_chatbot_max_tokens', 150));
-    echo "<input type='number' name='llama3_chatbot_max_tokens' value='{$maxTokens}' class='small-text'>";
-}
-function temperature_field_callback() {
-    $temperature = esc_attr(get_option('llama3_chatbot_temperature', 0.8));
-    echo "<input type='number' step='0.01' name='llama3_chatbot_temperature' value='{$temperature}' class='small-text'>";
-}
-function top_p_field_callback() {
-    $topP = esc_attr(get_option('llama3_chatbot_top_p', 0.9));
-    echo "<input type='number' step='0.01' name='llama3_chatbot_top_p' value='{$topP}' class='small-text'>";
-}
-function split_tokens_field_callback() {
-    $splitTokens = absint(get_option('llama3_chatbot_split_tokens', 5));
-    echo "<input type='number' name='llama3_chatbot_split_tokens' value='{$splitTokens}' class='small-text'> <p class='description'>". __('Tamaño (en palabras) de cada fragmento de respuesta en streaming.', 'llama3-chatbot') ."</p>";
-}
-?>
-<style>
-.chatbot-container { background-color: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); overflow: hidden; width: 400px; display: flex; flex-direction: column; margin: 20px auto; }
-.chat-header { background-color: #007bff; color: white; padding: 20px; text-align: center; display: flex; justify-content: space-between; align-items: center; }
-.chat-header h1 { margin: 0; }
-.chat-header button { background-color: #f44336; color: white; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer; font-size: 0.9em; }
-.chat-messages { padding: 20px; overflow-y: auto; flex-grow: 1; display: flex; flex-direction: column; }
-.message { background-color: #e0e0e0; border-radius: 5px; padding: 10px 15px; margin-bottom: 10px; max-width: 80%; word-wrap: break-word; }
-.user-message { background-color: #007bff; color: white; align-self: flex-end; }
-.bot-message { background-color: #e0e0e0; align-self: flex-start; }
-.chat-input-area { border-top: 1px solid #ccc; padding: 15px; display: flex; }
-.chat-input { flex-grow: 1; padding: 10px; border: 1px solid #ccc; border-radius: 5px; margin-right: 10px; }
-.send-button { background-color: #007bff; color: white; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer; }
-.error-message { color: red; margin-top: 10px; text-align: center; }
-.loading-indicator { text-align: center; margin-bottom: 10px; font-style: italic; color: grey; }
-.bot-media-container { position: relative; }
-.bot-media { max-width: 100%; border-radius: 5px; margin-top: 10px; display: block; }
-.download-button { display: none; }
-</style>
-<script>
-(function($) {
-    const messagesDiv = document.getElementById('chat-messages');
-    const promptInput = document.getElementById('prompt-input');
-    const apiErrorDiv = document.getElementById('api-error');
-    const loadingAreaDiv = document.getElementById('loading-area');
-    const apiUrl = llama3ChatbotData.ajaxurl;
-    let currentBotMessageDiv = null;
-
-    function agregarMensaje_llama3_chatbot(texto, esUsuario, response_type = null, media_uri = null) {
-        let messageDiv;
-        if (esUsuario || response_type || media_uri) {
-            messageDiv = document.createElement('div');
-            messageDiv.classList.add('message');
-            messageDiv.classList.add(esUsuario ? 'user-message' : 'bot-message');
-            messagesDiv.insertBefore(messageDiv, loadingAreaDiv);
-            if (!esUsuario) currentBotMessageDiv = messageDiv;
-        } else {
-            messageDiv = currentBotMessageDiv;
-            if (!messageDiv) {
-                messageDiv = document.createElement('div');
-                messageDiv.classList.add('message');
-                messageDiv.classList.add('bot-message');
-                messagesDiv.insertBefore(messageDiv, loadingAreaDiv);
-                currentBotMessageDiv = messageDiv;
-            }
-        }
-
-        if (response_type === 'image' && media_uri) {
-            messageDiv.textContent = texto;
-            const mediaContainer = document.createElement('div');
-            mediaContainer.classList.add('bot-media-container');
-            const imgElement = document.createElement('img');
-            imgElement.src = media_uri;
-            imgElement.alt = 'Generated Image';
-            imgElement.classList.add('bot-media');
-            mediaContainer.appendChild(imgElement);
-            messageDiv.appendChild(mediaContainer);
-        } else if (response_type === 'music' && media_uri) {
-            messageDiv.textContent = texto;
-            const mediaContainer = document.createElement('div');
-            mediaContainer.classList.add('bot-media-container');
-            const audioPlayer = document.createElement('audio');
-            audioPlayer.src = media_uri;
-            audioPlayer.controls = true;
-            audioPlayer.classList.add('bot-media');
-            mediaContainer.appendChild(audioPlayer);
-            messageDiv.appendChild(mediaContainer);
-        } else {
-            messageDiv.textContent += texto;
-        }
-
-        messagesDiv.scrollTop = messagesDiv.scrollHeight;
-    }
-
-    function mostrarErrorAPI_llama3_chatbot() {
-        apiErrorDiv.style.display = 'block';
-    }
-
-    function ocultarErrorAPI_llama3_chatbot() {
-        apiErrorDiv.style.display = 'none';
-    }
-    function mostrarCargando_llama3_chatbot() {
-        loadingAreaDiv.style.display = 'block';
-    }
-
-    function ocultarCargando_llama3_chatbot() {
-        loadingAreaDiv.style.display = 'none';
-    }
-
-    function clearChat_llama3_chatbot() {
-        window.location.href = '?llama3_chatbot_clear_chat=1';
-    }
-
-    function enviarMensaje_llama3_chatbot() {
-        const prompt = promptInput.value.trim();
-        if (prompt === '') return;
-        agregarMensaje_llama3_chatbot(prompt, true);
-        promptInput.value = '';
-        ocultarErrorAPI_llama3_chatbot();
-        mostrarCargando_llama3_chatbot();
-        currentBotMessageDiv = null;
-
-        const eventSource = new EventSource(apiUrl + '?action=llama3_chatbot_api&nonce=' + llama3ChatbotData.nonce, { withCredentials: true });
-        eventSource.addEventListener('open', () => {
-            console.log("SSE stream opened.");
-        });
-
-        eventSource.addEventListener('message', (event) => {
-            ocultarCargando_llama3_chatbot();
-            try {
-                const data = JSON.parse(event.data);
-                if (data.response_chunk) {
-                    agregarMensaje_llama3_chatbot(data.response_chunk, false);
-                } else if (data.response_type === 'image' && data.image_data_uri) {
-                    agregarMensaje_llama3_chatbot("Imagen generada:", false, 'image', data.image_data_uri);
-                    eventSource.close();
-                } else if (data.response_type === 'music' && data.music_data_uri) {
-                    agregarMensaje_llama3_chatbot("Música generada:", false, 'music', data.music_data_uri);
-                    eventSource.close();
-                } else if (data.error) {
-                    agregarMensaje_llama3_chatbot("Chatbot Error: " + data.error, false);
-                    eventSource.close();
-                }
-            } catch (error) {
-                console.error("Error parsing SSE data:", error);
-                mostrarErrorAPI_llama3_chatbot();
-                agregarMensaje_llama3_chatbot("Error processing response.", false);
-                eventSource.close();
-            }
-        });
-
-        eventSource.addEventListener('error', (event) => {
-            ocultarCargando_llama3_chatbot();
-            mostrarErrorAPI_llama3_chatbot();
-            agregarMensaje_llama3_chatbot("Error getting response (stream error).", false);
-            console.error("SSE error:", event);
-            eventSource.close();
-        });
-
-        const postData = { action: 'llama3_chatbot_api', prompt: prompt, nonce: llama3ChatbotData.nonce };
-        const urlParams = new URLSearchParams(postData).toString();
-        eventSource.url = apiUrl + '?' + urlParams;
-    }
-
-    promptInput.addEventListener('keypress', function(event) {
-        if (event.key === 'Enter') {
-            enviarMensaje_llama3_chatbot();
-            event.preventDefault();
-        }
-    });
-
-    $('#chat-messages').on('contextmenu', '.bot-media-container', function(e) {
-        return false;
-    });
-
-})(jQuery);
-</script>
-PHP_PLUGIN_CODE
-#wp plugin activate llama3-chatbot-pro
-
-# Eliminar el directorio temporal del plugin
-RUN rm -rf /var/www/html/llama3-chatbot-pro
-
-# Copiar nuevamente el plugin después de la instalación de WordPress (para permisos correctos)
-COPY . /var/www/html/wp-content/plugins/llama3-chatbot-pro
-
-# Establecer permisos
-RUN chown -R www-data:www-data /var/www/html/*
-
-# Establecer DocumentRoot de Apache a /var/www/html
-RUN sed -i 's!DocumentRoot "/var/www/localhost/htdocs"!DocumentRoot "/var/www/html"!g' /etc/apache2/httpd.conf && \
-    sed -i 's!Directory "/var/www/localhost/htdocs"!Directory "/var/www/html"!g' /etc/apache2/httpd.conf
-
-# Cambiar a usuario no-root
-USER www-data
-
-EXPOSE 80
-CMD ["apache2-foreground"]
